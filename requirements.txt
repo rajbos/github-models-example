@@ -1,3 +1,4 @@
 llama-index
 openai
 python-dotenv
+azure.storage.blob
