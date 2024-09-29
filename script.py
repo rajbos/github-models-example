@@ -10,16 +10,39 @@ from llama_index.core.storage.index_store import SimpleIndexStore
 from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.core import load_index_from_storage
 
-# Load the environment variables
-dotenv.load_dotenv()
+def setup():
+    # Load the environment variables
+    dotenv.load_dotenv()
 
-# Check if the GITHUB_TOKEN is set
-if not os.getenv("GITHUB_TOKEN"):
-    raise ValueError("GITHUB_TOKEN is not set")
+    # Check if the GITHUB_TOKEN is set
+    if not os.getenv("GITHUB_TOKEN"):
+        raise ValueError("GITHUB_TOKEN is not set")
 
-# Set the OPENAI_API_KEY to the GITHUB_TOKEN
-os.environ["OPENAI_API_KEY"] = os.getenv("GITHUB_TOKEN")
-os.environ["OPENAI_BASE_URL"] = "https://models.inference.ai.azure.com/"
+    # Set the OPENAI_API_KEY to the GITHUB_TOKEN
+    os.environ["OPENAI_API_KEY"] = os.getenv("GITHUB_TOKEN")
+    os.environ["OPENAI_BASE_URL"] = "https://models.inference.ai.azure.com/"
+
+    # Set up the logging
+    logging.basicConfig(
+        stream=sys.stdout, level=logging.INFO
+    )  # change the logging.DEBUG for more verbose output
+    logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
+    # Set up the LLM and Embedding models
+    llm = OpenAI(
+        model="gpt-4o-mini",
+        api_key=os.getenv("OPENAI_API_KEY"),
+        api_base=os.getenv("OPENAI_BASE_URL"),
+    )
+
+    embed_model = OpenAIEmbedding(
+        model="text-embedding-3-small",
+        api_key=os.getenv("OPENAI_API_KEY"),
+        api_base=os.getenv("OPENAI_BASE_URL"),
+    )
+
+    Settings.llm = llm
+    Settings.embed_model = embed_model
 
 def get_github_rate_limit():
     # send a get request to the openai api to check if the api key is valid
@@ -44,28 +67,6 @@ def get_github_rate_limit():
         headers_dict = {header: value for header, value in response.headers.items()}
         print(f"X-Ratelimit-Remaining-Tokens: {headers_dict.get('x-ratelimit-remaining-tokens')}")
         print(f"X-Ratelimit-Remaining-Requests: {headers_dict.get('x-ratelimit-remaining-requests')}")
-
-# Set up the logging
-logging.basicConfig(
-    stream=sys.stdout, level=logging.INFO
-)  # change the logging.DEBUG for more verbose output
-logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-
-# Set up the LLM and Embedding models
-llm = OpenAI(
-    model="gpt-4o-mini",
-    api_key=os.getenv("OPENAI_API_KEY"),
-    api_base=os.getenv("OPENAI_BASE_URL"),
-)
-
-embed_model = OpenAIEmbedding(
-    model="text-embedding-3-small",
-    api_key=os.getenv("OPENAI_API_KEY"),
-    api_base=os.getenv("OPENAI_BASE_URL"),
-)
-
-Settings.llm = llm
-Settings.embed_model = embed_model
 
 def log_duration(start_time, message):
     duration = round((time.time() - start_time) * 1000)
@@ -161,6 +162,7 @@ def parse_blog_header_date(content):
     date = [line for line in header if line.startswith("date")][0]
     return date
 
+setup()
 
 blogging_directory = get_blogging_directory()
 index = get_index(blogging_directory)
@@ -215,7 +217,7 @@ messages = [
 
 startTime = time.time()
 print(f"Calling the model with the following prompt: [{prompt}] and the context in all fragments")
-response = llm.chat(messages)
+response = Settings.llm.chat(messages)
 print()
 print(response)
 print()
@@ -232,7 +234,7 @@ messages = [
     ChatMessage(role="system", content="You are a helpful assistant that answers some questions with the help of some context data.\n\nHere is the context data:\n\n" + documents_content_str),
     ChatMessage(role="user", content=prompt)
 ]
-response = llm.chat(messages)
+response = Settings.llm.chat(messages)
 print()
 print(response)
 print()
