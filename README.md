@@ -17,22 +17,25 @@ To run the script, you can use the following command:
 python script.py
 ```
 
-### Process
+## Local process
+To run the embedding and inference steps on you local machine, start here. This will show you the basic moving parts.
 The script will execute the following steps:
 
-#### Step 1: Download and index the data
-1. Download the data from my blogging repository at https://github.com/rajbos/rajbos.github.io
-1. The data size from the repository is printed
-1. Load the data using the LLamaIndex SDK from a folder in the blogging repository, into a VectorStoreIndex
-1. Use the `text-embedding-3-small` OpenAI model from the GitHub Models to create embeddings for the data
-1. Persists the embeddings in the `blog_index` folder to retrieve for the next run (if needed)
-1. After persisting, the size of the new folder is printed
+- Download and index the data: See [lab 1](/labs/Lab%201%20-%20Download%20and%20index%20the%20data.md)
+- Query the vector store: See [lab 2](/labs/Lab%202%20-%20Query%20the%20vector%20store.md)
 
-#### Step 2: Query the vector store
-1. Query the vector store with the user prompt, e.g. "Explain GitHub tokens and how to use them"
-1. The script will return the document fragments from the vector store that are most similar to the query
-1. The fragments and the user prompt are now send to the `gpt-4o-mini` model to generate a natural language response on the query, using the fragments found in the vector store
-1. The model response is printed
+## Using Azure Resources
+Now that we have seen the moving parts, we can start leveling up and run this with Azure resources.
+
+- Use Azure Blob Storage to store the data: See [lab 3](/labs/Lab%203%20-%20Upload%20the%20data%20into%20blob%20storage.md)
+- Use Azure Cognitive Services to create embeddings: See [lab 4](/labs/Lab%204%20-%20Create%20embeddings%20with%20Azure%20OpenAI.md)
+- Use Azure Machine Learning to run the inference
+
+### Running the scripts
+1. Look at the scripts for the documented parameters on the top
+1. Configure the necesary environment variables (also see `.env-example` that can be copied to `.env` and filled in)
+1. Run the download of the dependencies with `pip install -r requirements.txt`
+1. Run the scripts one by one with `python <script-name>.py`
 
 ### Extra information
 All along the way, the most interesting durationss for each step is shown to give you an idea of the performance of the script.

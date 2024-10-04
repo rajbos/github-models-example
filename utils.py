@@ -1,16 +1,7 @@
-import os, time, dotenv, logging, sys, requests
-from llama_index.llms.openai import OpenAI
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
-from llama_index.core import Settings
-from llama_index.core.llms import ChatMessage
-from llama_index.core import StorageContext
-from llama_index.core.storage.docstore import SimpleDocumentStore
-from llama_index.core.storage.index_store import SimpleIndexStore
-from llama_index.core.vector_stores import SimpleVectorStore
-from llama_index.core import load_index_from_storage
+import os, time, dotenv, logging, sys, requests, subprocess
+from openai import AzureOpenAI
 
-def setup():
+def setup_local():
     """
     Sets up the environment and initializes the necessary models and logging.
 
@@ -94,8 +85,8 @@ def get_github_rate_limit():
         headers_dict = {header: value for header, value in response.headers.items()}
         remaining_tokens = headers_dict.get('x-ratelimit-remaining-tokens')
         remaining_requests = headers_dict.get('x-ratelimit-remaining-requests')
-        print(f"X-Ratelimit-Remaining-Tokens: {remaining_tokens}")
-        print(f"X-Ratelimit-Remaining-Requests: {remaining_requests}")
+        print(f"Ratelimit remaining tokens: {remaining_tokens}")
+        print(f"Ratelimit remaining requests: {remaining_requests}")
 
         return int(remaining_tokens), int(remaining_requests)
 
@@ -146,7 +137,22 @@ def get_blogging_directory():
     blogging_directory = f"{blogging_directory}/_posts/"
     print("Size of the blogging directory:")
     os.system(f"du -shc {blogging_directory}")
+    show_files_in_directory(blogging_directory, "files in the blogging directory")
     return blogging_directory
+
+def show_files_in_directory(directory, message):
+    """
+    Displays the number of files in the specified directory along with a custom message.
+
+    Args:
+        directory (str): The path to the directory whose files are to be counted.
+        message (str): The custom message to be displayed alongside the file count.
+
+    Returns:
+        None
+    """
+    nr_of_files = subprocess.run(f"ls -1 {directory} | wc -l", shell=True, capture_output=True, text=True)
+    print(f"{nr_of_files.stdout.strip()} {message}")
 
 def get_index(blogging_directory): 
     """
@@ -179,6 +185,7 @@ def get_index(blogging_directory):
         # show the size of the files in the persist_dir
         print("Size of the persisted directory:")
         os.system(f"du -sh {persist_dir}/*")
+        show_files_in_directory(persist_dir, "files in the persist directory")
     else:
         print("Rebuilding storage context from directory")
         startTime = time.time()
@@ -192,7 +199,49 @@ def get_index(blogging_directory):
         # show the size of the files in the persist_dir
         print("Size of the persist directory:")
         os.system(f"du -sh {persist_dir}/*")
+        show_files_in_directory(persist_dir, "files in the persist directory")
     return index
+
+def get_documents(fragments, index, blogging_directory):
+    # Load the documents that contain the fragments
+    documents = []
+    for fragment in fragments:
+        # Find the document based on the node_id
+        document = index.storage_context.docstore.get_document(fragment.node_id)
+        if document:
+            # find the file name from this document
+            file_name = document.metadata.get("file_name")
+            print(f"> Document with [{fragment.node_id}] was found in file [{file_name}]. Fragment relevance score: {round(fragment.score, 2)}")
+            #print(f"> Fragment content: {fragment.text}")
+            documents.append(file_name)
+        else:
+            print(f"[ERROR] Document with {fragment.node_id} was not found")
+
+    # Deduplicate the documents
+    documents = list(set(documents))
+    print()
+    print(f"Found [{len(documents)}] documents that match the question:")
+
+    # Load the content of the documents
+    documents_content = []
+    for document in documents:
+        # check if the file exists to prevent errors
+        if not os.path.exists(f"{blogging_directory}{document}"):
+            print(f"- [ERROR] File [{blogging_directory}{document}] does not exist")
+            continue
+
+        # Load the file from the documents directory
+        with open(f"{blogging_directory}{document}", "r") as file:
+            content = file.read()
+            documents_content.append(content)
+
+        # Load the information from the content to show a reference
+        date = parse_blog_header_date(content)
+        url = convert_filename_to_url(document, date, "https://devopsjournal.io/blog")
+        print(f"\t- File: [{blogging_directory}{document}] which leads to [{url}]")
+
+        return documents_content
+
 
 def convert_filename_to_url(document, date, base_url):
     """
@@ -257,3 +306,66 @@ def parse_blog_header_date(content):
     except IndexError:
         date = None  # or you can use a default value or message
     return date
+
+def call_model_with_context(user_prompt, context, prompt_log_message, log_duration_message):
+    print()
+    startTime = time.time()
+    
+    # Prepare the prompt messages with the context data
+    messages = [
+        ChatMessage(role="system", content="You are a helpful assistant that answers some questions with the help of some context data.\n\nHere is the context data:\n\n" + context),
+        ChatMessage(role="user", content=user_prompt)
+    ]
+
+    print(f"Calling the model with the following prompt: [{user_prompt}] {prompt_log_message}")
+    response = Settings.llm.chat(messages)
+    print()
+    for line in response.message.content.splitlines():
+        print(f"\t{line}")
+    print()
+    ratelimit_info = response.additional_kwargs
+    print(f"{ratelimit_info["total_tokens"]} tokens used")
+    log_duration(startTime, log_duration_message)
+
+def setup_azure_client():
+    """
+    Sets up and initializes an Azure OpenAI client using environment variables for configuration.
+    Environment Variables:
+    - ENDPOINT_URL: The endpoint URL for the Azure OpenAI service (default: "https://xms-openai.openai.azure.com/").
+    - DEPLOYMENT_NAME: The deployment name for the Azure OpenAI service (default: "gpt-4o").
+    - SEARCH_ENDPOINT: The endpoint URL for the Azure AI Search service (default: "https://xms-azure-search.search.windows.net").
+    - SEARCH_KEY: The admin key for the Azure AI Search service (default: "put your Azure AI Search admin key here").
+    - SEARCH_INDEX_NAME: The index name for the Azure AI Search service (default: "vector-1727189048533").
+    - AZURE_OPENAI_API_KEY: The subscription key for the Azure OpenAI service.
+    Raises:
+    - ValueError: If the ENDPOINT_URL or AZURE_OPENAI_API_KEY environment variables are not set.
+    Returns:
+    - AzureOpenAI: An initialized Azure OpenAI client with key-based authentication.
+    """
+    dotenv.load_dotenv()
+    endpoint = os.getenv("ENDPOINT_URL", "https://xms-openai.openai.azure.com/")
+    deployment = os.getenv("DEPLOYMENT_NAME", "gpt-4o")
+    search_endpoint = os.getenv("SEARCH_ENDPOINT", "https://xms-azure-search.search.windows.net")
+    search_key = os.getenv("SEARCH_KEY", "put your Azure AI Search admin key here")
+    search_index = os.getenv("SEARCH_INDEX_NAME", "vector-1727189048533")
+    subscription_key = os.getenv("AZURE_OPENAI_API_KEY")
+
+    # validate the endpint and API Key
+    if not endpoint:
+        raise ValueError("ENDPOINT_URL is not set")
+    
+    if not subscription_key:
+        raise ValueError("AZURE_OPENAI_API_KEY is not set")
+    
+    # Show the info we got
+    print(f"Endpoint: [{endpoint}] and lenght of the key: [{len(subscription_key)}]")
+    print(f"Using [{search_index}] with key length [{len(search_key)}] and endpoint [{search_endpoint}]")
+
+    # Initialize Azure OpenAI client with key-based authentication
+    client = AzureOpenAI(
+        azure_endpoint = endpoint,
+        api_key = subscription_key,
+        api_version = "2024-05-01-preview",
+    )
+
+    return client, deployment, search_endpoint, search_key, search_index

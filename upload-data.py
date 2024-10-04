@@ -1,31 +1,15 @@
-import os, time
+"""
+    This script is going to upload the blogposts from the downloaded blog repository to an Azure Blob Storage.
+
+    See the documentation for Lab 3 for more details.
+"""
+import os
 from azure.storage.blob import BlobServiceClient
+from utils import get_blogging_directory
 
 # Check if the AZURE_STORAGE_CONNECTION_STRING is set
 if not os.getenv("AZURE_STORAGE_CONNECTION_STRING"):
     raise ValueError("AZURE_STORAGE_CONNECTION_STRING is not set")
-
-def get_blogging_directory():
-    # Create a new directory to clone the repository
-    blogging_directory = "blog"
-    if not os.path.exists(blogging_directory):
-        print("Cloning the blogging repository")
-        os.makedirs(blogging_directory)
-        # Clone the blogging repository from github.com/rajbos/rajbos.github.io
-        os.system(
-            f"git clone https://github.com/rajbos/rajbos.github.io.git {blogging_directory}"
-        )
-    else:
-        # check if the directory is more than 24 hours old
-        if os.path.getmtime(blogging_directory) < time.time() - 60 * 60 * 24:
-            print("Pulling the latest changes from the blogging repository")
-            os.system(f"cd {blogging_directory} && git pull")
-
-    # show the size of the files in the persist_dir
-    blogging_directory = f"{blogging_directory}/_posts/"
-    print("Size of the blogging directory:")
-    os.system(f"du -shc {blogging_directory}")
-    return blogging_directory
 
 # Main code
 blogging_directory = get_blogging_directory()
